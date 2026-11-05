@@ -32,10 +32,13 @@ function frameAttrs(tag) {
 }
 
 const SITE_ORIGIN = "https://hivecommons.dev";
-const KNOWN_FRAME_ORIGINS = new Set([SITE_ORIGIN, "https://hivecommons.github.io"]);
+const KNOWN_FRAME_ORIGINS = new Set([
+  SITE_ORIGIN, "http://hivecommons.dev",
+  "https://hivecommons.github.io", "http://hivecommons.github.io",
+]);
 const FORBIDDEN = /^allow-(top-navigation|forms|modals|downloads)/;
 
-// The GitHub Pages alias redirects to SITE_ORIGIN, so it counts as same-origin too.
+// HTTP site URLs upgrade to HTTPS; the GitHub Pages alias redirects to SITE_ORIGIN.
 // Relative and protocol-relative src values conservatively count as same-origin.
 // srcdoc and about: frames inherit the embedder's origin and count as same-origin too.
 export function isSameOriginFrame(tag) {
@@ -99,9 +102,14 @@ test("fixture: isSameOriginFrame — relative, site-origin, srcdoc, src-less and
   assert.equal(isSameOriginFrame('<iframe src="HTTPS://HIVECOMMONS.DEV/x/" title="x">'), true);
 });
 
-test("fixture: GitHub Pages aliases count as same-origin and must keep scripts sandboxed", () => {
+test("fixture: site and GitHub Pages URLs count as same-origin and must keep scripts sandboxed", () => {
   for (const src of [
+    "https://hivecommons.dev/project/",
+    "http://hivecommons.dev/project/",
+    "HTTP://HIVECOMMONS.DEV/project/",
     "https://hivecommons.github.io/project/",
+    "http://hivecommons.github.io/project/",
+    "HTTP://HIVECOMMONS.GITHUB.IO/project/",
     "HTTPS://HIVECOMMONS.GITHUB.IO/project/",
     "//hivecommons.github.io/project/",
   ]) {
@@ -116,6 +124,8 @@ test("fixture: GitHub Pages aliases count as same-origin and must keep scripts s
 test("fixture: unrelated GitHub Pages sites and lookalike domains stay cross-origin", () => {
   for (const src of [
     "https://other.github.io/project/",
+    "http://other.github.io/project/",
+    "http://hivecommons.dev.example.org/project/",
     "https://hivecommons.github.io.example.org/project/",
   ]) {
     assert.equal(isSameOriginFrame(`<iframe src="${src}" title="x">`), false);

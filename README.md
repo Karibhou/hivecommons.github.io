@@ -65,8 +65,8 @@ red PR job against.
   committed HTML page: each frame carries a `sandbox` attribute (bare, quoted or
   unquoted) that grants no
   top-navigation, forms, modals or downloads, and a same-origin frame (relative `src`, or
-  one on `hivecommons.dev` or its redirecting GitHub Pages alias, where sibling project
-  sites served under this domain by other repositories live) never pairs
+  an HTTP or HTTPS URL on `hivecommons.dev` or its redirecting GitHub Pages alias, where
+  sibling project sites served under this domain by other repositories live) never pairs
   `allow-same-origin` with `allow-scripts` — so the embedded document cannot script
   this page or navigate it. Zero dependencies.
 - `node --test scripts/page-scripts.test.mjs` — static gate over every committed HTML
