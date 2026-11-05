@@ -17,7 +17,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { ROOT, htmlFiles, isRedirectPage, lineOf } from "./html-pages.mjs";
-import { attrs } from "./page-csp.mjs";
+const FRAME_TAG = /<iframe\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+
+// Parse whole attribute names and values, including bare and unquoted forms.
+// Keep the first duplicate, as HTML does.
+function frameAttrs(tag) {
+  const out = Object.create(null);
+  const body = tag.replace(/^<iframe\b/i, "").replace(/>$/, "");
+  for (const m of body.matchAll(/([^\s"'<>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
+    const name = m[1].toLowerCase();
+    if (!(name in out)) out[name] = m[2] ?? m[3] ?? m[4] ?? "";
+  }
+  return out;
+}
 
 const SITE_ORIGIN = "https://hivecommons.dev";
 const FORBIDDEN = /^allow-(top-navigation|forms|modals|downloads)/;
@@ -25,7 +37,7 @@ const FORBIDDEN = /^allow-(top-navigation|forms|modals|downloads)/;
 // A frame is same-origin when its src is relative, or absolute on SITE_ORIGIN.
 // srcdoc and about: frames inherit the embedder's origin and count as same-origin too.
 export function isSameOriginFrame(tag) {
-  const a = attrs(tag);
+  const a = frameAttrs(tag);
   const src = a.src ?? "";
   if ("srcdoc" in a || src === "" || /^about:/i.test(src)) return true;
   if (/^https?:\/\//i.test(src)) return new URL(src).origin === SITE_ORIGIN;
@@ -34,10 +46,11 @@ export function isSameOriginFrame(tag) {
 
 export function frameProblems(html) {
   const problems = [];
-  for (const m of html.matchAll(/<iframe\b[^>]*>/gi)) {
+  for (const m of html.matchAll(FRAME_TAG)) {
     const tag = m[0];
-    const where = `line ${lineOf(html, m.index)} <iframe src="${attrs(tag).src ?? ""}">`;
-    const sandbox = attrs(tag).sandbox;
+    const a = frameAttrs(tag);
+    const where = `line ${lineOf(html, m.index)} <iframe src="${a.src ?? ""}">`;
+    const sandbox = a.sandbox;
     if (sandbox === undefined) {
       problems.push(`${where} has no sandbox attribute`);
       continue;
@@ -64,9 +77,9 @@ for (const file of htmlFiles()) {
 
 test("index.html: the software-factory embed is sandboxed to scripts only", () => {
   const html = readFileSync(`${ROOT}/index.html`, "utf8");
-  const frame = [...html.matchAll(/<iframe\b[^>]*>/g)].map((m) => m[0]).find((t) => (attrs(t).src ?? "").startsWith("/software-factory/"));
+  const frame = [...html.matchAll(FRAME_TAG)].map((m) => m[0]).find((t) => (frameAttrs(t).src ?? "").startsWith("/software-factory/"));
   assert.ok(frame, "missing the /software-factory/ iframe");
-  assert.deepEqual(attrs(frame).sandbox.split(/\s+/).filter(Boolean), ["allow-scripts"]);
+  assert.deepEqual(frameAttrs(frame).sandbox.split(/\s+/).filter(Boolean), ["allow-scripts"]);
 });
 
 // --- fixture self-tests -----------------------------------------------------
@@ -112,6 +125,21 @@ test("fixture: compliant frames and pages without frames pass; an empty sandbox 
   assert.deepEqual(frameProblems(page('<iframe src="/software-factory/" sandbox="allow-scripts" title="x"></iframe>')), []);
   assert.deepEqual(frameProblems(page('<iframe src="/x/" sandbox="" title="x"></iframe>')), []);
   assert.deepEqual(frameProblems(page('<p>no frames</p>')), []);
+});
+
+test("fixture: bare and unquoted sandbox attributes are checked without truncating quoted values", () => {
+  assert.deepEqual(frameProblems(page('<iframe sandbox src=/x></iframe>')), []);
+  assert.deepEqual(frameProblems(page('<iframe src=/x sandbox=allow-scripts></iframe>')), []);
+  assert.deepEqual(frameProblems(page('<iframe srcdoc="<p>x</p>" sandbox></iframe>')), []);
+  assert.deepEqual(frameProblems(page('<iframe src=/x sandbox=allow-forms></iframe>')), [
+    'line 2 <iframe src="/x"> sandbox grants allow-forms',
+  ]);
+  assert.deepEqual(frameProblems(page('<iframe title="sandbox" src=/x></iframe>')), [
+    'line 2 <iframe src="/x"> has no sandbox attribute',
+  ]);
+  assert.deepEqual(frameProblems(page('<iframe srcdoc="<p>x</p>" src=https://example.org sandbox="allow-scripts allow-same-origin"></iframe>')), [
+    'line 2 <iframe src="https://example.org"> is same-origin and pairs allow-same-origin with allow-scripts, which is no sandbox at all',
+  ]);
 });
 
 test("fixture: several frames are each checked", () => {
